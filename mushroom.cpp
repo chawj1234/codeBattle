@@ -9,8 +9,8 @@ using namespace std;
 const int MY_TERRITORY = 1; // 내 영토
 const int OPPONENT_TERRITORY = 2; // 상대방 영토
 
-const int MAX_DEPTH = 4; // Minimax 탐색 최대 깊이
-const vector<int> SEARCH_SIZES = {5, 6, 7, 50}; // 각 깊이별 탐색 개수 (0 ~ 4)
+const int MAX_DEPTH = 7; // Minimax 탐색 최대 깊이
+const vector<int> SEARCH_SIZES = {10, 10, 10, 10, 10, 10, 10}; // 각 깊이별 탐색 개수 (0 ~ 6. depth 7은 최대 깊이라서 탐색하지 않음)
 
 class MinimaxGameBoard {
 private:
@@ -44,19 +44,21 @@ public:
     int getOpponentScore() const {
         return opponentScore; // 상대 점수 반환
     }
+
+    bool setPassed(bool passed) {
+        this->passed = passed; // 패스 여부 설정
+        return this->passed;
+    }
     bool isPassed() const {
         return passed; // 패스 여부 반환
     }
 
     bool isValid(int r1, int c1, int r2, int c2) const {
-        int sums = 0;
         bool r1fit = false, c1fit = false, r2fit = false, c2fit = false;
 
         for (int r = r1; r <= r2; r++)
             for (int c = c1; c <= c2; c++)
-                if (board[r][c] != 0)
-                {
-                    sums += board[r][c];
+                if (board[r][c] != 0) { // 숫자가 있는 경우 (아무도 차지하지 않음))
                     if (r == r1)
                         r1fit = true;
                     if (r == r2)
@@ -66,7 +68,7 @@ public:
                     if (c == c2)
                         c2fit = true;
                 }
-        return (sums == 10) && r1fit && r2fit && c1fit && c2fit;
+        return r1fit && r2fit && c1fit && c2fit;
     }
 
     // 주어진 수를 보드에 반영 (칸을 0으로 지움)
@@ -103,27 +105,50 @@ public:
         passed = false;
     }
 
-    vector<vector<int>> getAvailableMoves() const {
+    vector<vector<int>> getAvailableMoves(bool isMyTurn) const {
         vector<vector<int>> availableMoves;
         int rows = board.size();
         int cols = board[0].size();
 
-        for (int r1 = 0; r1 < rows; r1++)
-            for (int c1 = 0; c1 < cols; c1++)
-                for (int r2 = r1; r2 < rows; r2++)
-                    for (int c2 = c1; c2 < cols; c2++)
-                        if (isValid(r1, c1, r2, c2)) {
+        const int currentPlayerTerritory = isMyTurn ? MY_TERRITORY : OPPONENT_TERRITORY;
+        const int opponentTerritory = isMyTurn ? OPPONENT_TERRITORY : MY_TERRITORY;
+
+        // 누적 합 배열을 만든다.
+        vector<vector<int>> prefixSum(rows + 1, vector<int>(cols + 1, 0));
+        for (int r = 1; r <= rows; r++)
+            for (int c = 1; c <= cols; c++)
+                prefixSum[r][c] = board[r - 1][c - 1] + prefixSum[r - 1][c] + prefixSum[r][c - 1] - prefixSum[r - 1][c - 1];
+
+        // 모든 가능한 사각형을 탐색
+        for (int r1 = 0; r1 < rows; r1++) {
+            for (int c1 = 0; c1 < cols; c1++) {
+                for (int r2 = r1; r2 < rows; r2++) {
+                    // int sum = getSum(r1, c1, r2, c1); // 사각형 (r1, c1) ~ (r2, c1)의 합 계산
+                    int sum = prefixSum[r2 + 1][c1 + 1] - prefixSum[r1][c1 + 1] - prefixSum[r2 + 1][c1] + prefixSum[r1][c1];
+                    if (sum > 10)
+                        break;
+                    for (int c2 = c1; c2 < cols; c2++) {
+                        // int sum = getSum(r1, c1, r2, c2); // 사각형 (r1, c1) ~ (r2, c2)의 합 계산
+                        int sum = prefixSum[r2 + 1][c2 + 1] - prefixSum[r1][c2 + 1] - prefixSum[r2 + 1][c1] + prefixSum[r1][c1];
+                        if (sum > 10)
+                            break;
+                        // 사각형의 네 변이 모두 포함되어 있는지 확인
+                        if (sum == 10 && isValid(r1, c1, r2, c2)) {
                             int size = (r2 - r1 + 1) * (c2 - c1 + 1); // 사각형의 크기 계산
                             for (int r = r1; r <= r2; r++)
                                 for (int c = c1; c <= c2; c++) {
-                                    if (getTerritoryBoard()[r][c] == MY_TERRITORY)
-                                        size--; // 내 영토는 크기에 포함하지 않도록 조정
-                                    else if (getTerritoryBoard()[r][c] == OPPONENT_TERRITORY)
-                                        size++; // 상대 영토를 하나 더 추가하도록 조정
+                                    if (getTerritoryBoard()[r][c] == currentPlayerTerritory)
+                                        size--; // 현재 차례의 영토는 크기에 포함하지 않도록 조정
+                                    else if (getTerritoryBoard()[r][c] == opponentTerritory)
+                                        size++; // 현재 차례 상대방의 영토를 뺏을 경우 하나 더 추가하도록 조정
                                 }
 
                             availableMoves.push_back({r1, c1, r2, c2, size}); // 유효한 사각형을 추가
                         }
+                    }
+                }
+            }
+        }
 
         return availableMoves;
     }
@@ -159,28 +184,6 @@ public:
             territoryBoard.resize(rows, vector<int>(cols, 0)); // 영토 보드 초기화
         }
 
-    // 사각형 (r1, c1) ~ (r2, c2)이 유효한지 검사 (합이 10이고, 네 변을 모두 포함)
-    bool isValid(int r1, int c1, int r2, int c2) {
-        int sums = 0;
-        bool r1fit = false, c1fit = false, r2fit = false, c2fit = false;
-
-        for (int r = r1; r <= r2; r++)
-            for (int c = c1; c <= c2; c++)
-                if (board[r][c] != 0)
-                {
-                    sums += board[r][c];
-                    if (r == r1)
-                        r1fit = true;
-                    if (r == r2)
-                        r2fit = true;
-                    if (c == c1)
-                        c1fit = true;
-                    if (c == c2)
-                        c2fit = true;
-                }
-        return (sums == 10) && r1fit && r2fit && c1fit && c2fit;
-    }
-
     int minimax(MinimaxGameBoard gameBoard, int depth, bool isMyTurn, int alpha, int beta) {
         // 현재 점수 계산
         int boardScore = gameBoard.getBoardScore();
@@ -201,9 +204,9 @@ public:
         }
 
         // 모든 가능한 사각형을 탐색
-        vector<vector<int>> availableMoves = gameBoard.getAvailableMoves();
-        int searchSize = availableMoves.size();
-        if (searchSize == 0) { // 유효한 사각형이 없으면
+        vector<vector<int>> availableMoves = gameBoard.getAvailableMoves(isMyTurn);
+        int moveCount = availableMoves.size();
+        if (moveCount == 0) { // 유효한 사각형이 없으면
             if (gameBoard.getBoardScore() > 0) {
                 return 1000 - depth; // 내 점수가 높으면 승리
             } else if (gameBoard.getBoardScore() < 0) {
@@ -213,7 +216,7 @@ public:
             }
         }
 
-        searchSize = min(searchSize, SEARCH_SIZES[depth]); // 깊이에 따라 탐색 개수 제한
+        int searchSize = min(moveCount, SEARCH_SIZES[depth]); // 깊이에 따라 탐색 개수 제한
 
         // 사각형 크기를 기준으로 내림차순 정렬
         partial_sort(availableMoves.begin(), availableMoves.begin() + searchSize, availableMoves.end(), [](const vector<int> &a, const vector<int> &b) {
@@ -227,6 +230,9 @@ public:
             newGameboard.updateMove(r1, c1, r2, c2, isMyTurn); // 현재 수를 적용
 
             int score = minimax(newGameboard, depth + 1, !isMyTurn, alpha, beta);
+
+            // cout << "Depth: " << depth << ", Move: (" << r1 << ", " << c1 << ") to (" << r2 << ", " << c2 << "), Score: " << score << endl;
+
             if (isMyTurn) {
                 bestScore = max(bestScore, score);
                 alpha = max(alpha, bestScore);
@@ -240,6 +246,22 @@ public:
             if (alpha >= beta)
                 return bestScore;
         }
+
+        if ((isMyTurn && gameBoard.getBoardScore() > 0) || (!isMyTurn && gameBoard.getBoardScore() < 0)) {
+            MinimaxGameBoard newGameboard = gameBoard;
+            newGameboard.setPassed(true); // 패스 상태로 설정
+            int passedScore = minimax(newGameboard, depth + 1, !isMyTurn, alpha, beta);
+
+            if (isMyTurn) {
+                bestScore = max(bestScore, passedScore);
+                alpha = max(alpha, bestScore);
+            } else {
+                bestScore = min(bestScore, passedScore);
+                beta = min(beta, bestScore);
+            }
+        }
+
+
         return bestScore; // 최적의 수의 점수 반환
     }
 
@@ -253,19 +275,19 @@ public:
         if (passed && myScore > opponentScore)
             return {-1, -1, -1, -1};
 
-        // 누적 합 배열을 만든다.
-        int rows = board.size();
-        int cols = board[0].size();
-        vector<vector<int>> prefixSum(rows + 1, vector<int>(cols + 1, 0));
-        for (int r = 1; r <= rows; r++)
-            for (int c = 1; c <= cols; c++)
-                prefixSum[r][c] = board[r - 1][c - 1] + prefixSum[r - 1][c] + prefixSum[r][c - 1] - prefixSum[r - 1][c - 1];
+        // // 누적 합 배열을 만든다.
+        // int rows = board.size();
+        // int cols = board[0].size();
+        // vector<vector<int>> prefixSum(rows + 1, vector<int>(cols + 1, 0));
+        // for (int r = 1; r <= rows; r++)
+        //     for (int c = 1; c <= cols; c++)
+        //         prefixSum[r][c] = board[r - 1][c - 1] + prefixSum[r - 1][c] + prefixSum[r][c - 1] - prefixSum[r - 1][c - 1];
 
         vector<int> bestMove = {-1, -1, -1, -1}; // 초기값: 유효한 사각형이 없을 때 반환할 값
         int bestScore = -1000; // 최적의 수의 점수
 
         MinimaxGameBoard simBoard = MinimaxGameBoard(board, territoryBoard, passed, myScore, opponentScore);
-        vector<vector<int>> availableMoves = simBoard.getAvailableMoves();
+        vector<vector<int>> availableMoves = simBoard.getAvailableMoves(true); // 현재 턴에 가능한 모든 사각형을 가져옴
         int searchSize = availableMoves.size();
         searchSize = min(searchSize, SEARCH_SIZES[0]); // 탐색 개수 제한
 
@@ -280,14 +302,25 @@ public:
             MinimaxGameBoard newGameboard = simBoard;
             newGameboard.updateMove(r1, c1, r2, c2, true); // 현재 수를 적용
 
-            int score = minimax(newGameboard, 0, false, -1000, 1000); // 현재 사각형을 적용한 후의 점수 계산
+            int score = minimax(newGameboard, 1, false, -1000, 1000); // 현재 사각형을 적용한 후의 점수 계산
             // cout << "Valid Move: (" << r1 << ", " << c1 << ") to (" << r2 << ", " << c2 << "), Score: " << score << endl;
-            if (score > bestScore)
-            {
+            if (score > bestScore) {
                 bestScore = score; // 최적의 수의 점수 갱신
                 bestMove = {r1, c1, r2, c2}; // 최적의 수 갱신
             }
         }
+
+        if (myScore > opponentScore) {
+            MinimaxGameBoard newGameboard = simBoard;
+            newGameboard.setPassed(true); // 패스 상태로 설정
+            int passedScore = minimax(newGameboard, 1, false, -1000, 1000);
+
+            if (passedScore > bestScore) {
+                bestScore = passedScore; // 최적의 수의 점수 갱신
+                bestMove = {-1, -1, -1, -1}; // 최적의 수 갱신
+            }
+        }
+
 
         return bestMove; // 최적의 수 반환
     }
