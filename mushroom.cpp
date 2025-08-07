@@ -134,16 +134,20 @@ public:
                             break;
                         // 사각형의 네 변이 모두 포함되어 있는지 확인
                         if (sum == 10 && isValid(r1, c1, r2, c2)) {
-                            int size = (r2 - r1 + 1) * (c2 - c1 + 1); // 사각형의 크기 계산
+                            int mySize = (r2 - r1 + 1) * (c2 - c1 + 1); // 나의 사각형의 크기 계산
+                            int oppoSize = (r2 - r1 + 1) * (c2 - c1 + 1); // 상대방의 사각형 크기 계산
                             for (int r = r1; r <= r2; r++)
                                 for (int c = c1; c <= c2; c++) {
-                                    if (getTerritoryBoard()[r][c] == currentPlayerTerritory)
-                                        size--; // 현재 차례의 영토는 크기에 포함하지 않도록 조정
-                                    else if (getTerritoryBoard()[r][c] == opponentTerritory)
-                                        size++; // 현재 차례 상대방의 영토를 뺏을 경우 하나 더 추가하도록 조정
+                                    if (getTerritoryBoard()[r][c] == MY_TERRITORY) {
+                                        mySize--; // 이미 내 영토이므로 사이즈 계산에서 제외
+                                        oppoSize++; // 상대방 영토로 변경되므로 상대방 사이즈 보너스
+                                    } else if (getTerritoryBoard()[r][c] == OPPONENT_TERRITORY){
+                                        mySize++; // 상대방 영토를 내 영토로 변경하므로 내 사이즈 보너스
+                                        oppoSize--; // 이미 상대방 영토이므로 상대방 사이즈 계산에서 제외
+                                    }
                                 }
 
-                            availableMoves.push_back({r1, c1, r2, c2, size}); // 유효한 사각형을 추가
+                            availableMoves.push_back({r1, c1, r2, c2, mySize, oppoSize}); // 유효한 사각형을 추가
                         }
                     }
                 }
@@ -219,9 +223,15 @@ public:
         int searchSize = min(moveCount, SEARCH_SIZES[depth]); // 깊이에 따라 탐색 개수 제한
 
         // 사각형 크기를 기준으로 내림차순 정렬
-        partial_sort(availableMoves.begin(), availableMoves.begin() + searchSize, availableMoves.end(), [](const vector<int> &a, const vector<int> &b) {
-            return a[4] > b[4]; // 크기가 큰 순서로 정렬
-        });
+        if (isMyTurn) {
+            partial_sort(availableMoves.begin(), availableMoves.begin() + searchSize, availableMoves.end(), [](const vector<int> &a, const vector<int> &b) {
+                return a[4] > b[4]; // mySize 크기가 큰 순서로 정렬
+            });
+        } else {
+            partial_sort(availableMoves.begin(), availableMoves.begin() + searchSize, availableMoves.end(), [](const vector<int> &a, const vector<int> &b) {
+                return a[5] > b[5]; // oppoSize 크기가 큰 순서로 정렬
+            });
+        }
 
         for (int i = 0; i < searchSize; i++) {
             const vector<int> &move = availableMoves[i]; // 현재 사각형의 좌표
@@ -292,11 +302,10 @@ public:
         searchSize = min(searchSize, SEARCH_SIZES[0]); // 탐색 개수 제한
 
         partial_sort(availableMoves.begin(), availableMoves.begin() + searchSize, availableMoves.end(), [](const vector<int> &a, const vector<int> &b) {
-            return a[4] > b[4]; // size. 크기가 큰 순서로 정렬
+            return a[4] > b[4]; // mySize. 크기가 큰 순서로 정렬
         });
 
-        for (int i = 0; i < searchSize; i++)
-        {
+        for (int i = 0; i < searchSize; i++) {
             const vector<int> &move = availableMoves[i]; // 현재 사각형의 좌표
             int r1 = move[0], c1 = move[1], r2 = move[2], c2 = move[3];
             MinimaxGameBoard newGameboard = simBoard;
